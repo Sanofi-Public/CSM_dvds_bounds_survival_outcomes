@@ -1,0 +1,9 @@
+Title: Confounding strength estimation
+Author: Jean-Baptiste Baitairian [aut]
+Encoding: UTF-8
+Depends: R (>= 4.3.2)
+Imports:
+    fastDummies (MIT),
+    foreach (Apache License 2.0),
+    ggplot2 (MIT)
+RoxygenNote: 7.2.3

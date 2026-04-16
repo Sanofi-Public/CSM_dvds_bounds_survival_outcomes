@@ -1,0 +1,57 @@
+---
+title: "DVDS bounds for survival outcomes"
+author: "Jean-Baptiste BAITAIRIAN"
+date: "2026-03-02"
+output: html_document
+---
+
+## Monte Carlo experiments
+
+Run Monte Carlo experiments.
+
+```{r}
+source("src/mc_experiments.R")
+```
+
+
+## Plots
+
+### Simulated data
+
+Survival function
+
+![Sensitivity analysis for the survival function among the treated](./figures/simul_surv_plot_treated_lee_dvds_estim_I_and_II_v1_v1.pdf)
+
+![Sensitivity analysis for the survival function among the control](./figures/simul_surv_plot_control_lee_dvds_estim_I_and_II_v1_v1.pdf)
+
+![Sensitivity analysis for the difference of survival functions](./figures/simul_diff_surv_plot_lee_dvds_estim_I_and_II_v1_v1.pdf)
+
+RMST
+
+![Sensitivity analysis for the RMST among the treated](./figures/simul_rmst_plot_treated_lee_dvds_estim_I_and_II_v2_v2.pdf)
+
+![Sensitivity analysis for the RMST among the control](./figures/simul_rmst_plot_control_lee_dvds_estim_I_and_II_v2_v2.pdf)
+
+![Sensitivity analysis for the difference in RMST](./figures/simul_diff_rmst_plot_lee_dvds_estim_I_and_II_v2_v2.pdf)
+
+
+### Real data
+
+Difference of survival functions
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.15](./figures/rhc_diff_surv_plot_lee_dvds_estim_I_and_II_v3_v3.pdf)
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.2](./figures/rhc_diff_surv_plot_lee_dvds_estim_I_and_II_v4_v4.pdf)
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.5](./figures/rhc_diff_surv_plot_lee_dvds_estim_I_and_II_v5_v5.pdf)
+
+
+Difference in RMST
+
+![Sensitivity analysis for the difference in RMST with Gamma=1.15](./figures/rhc_diff_rmst_plot_lee_dvds_estim_I_and_II_v6_v6.pdf)
+
+![Sensitivity analysis for the difference in RMST with Gamma=1.2](./figures/rhc_diff_rmst_plot_lee_dvds_estim_I_and_II_v7_v7.pdf)
+
+![Sensitivity analysis for the difference in RMST with Gamma=1.5](./figures/rhc_diff_rmst_plot_lee_dvds_estim_I_and_II_v8_v8.pdf)
+
+
