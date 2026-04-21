@@ -4,7 +4,7 @@
 #' Function to compute the bounds from Lee et al. (2024) for the survival function on Monte-Carlo samples. Works under parallel computation.
 #'
 #' @param data.list A list containing the Monte-Carlo samples
-#' @param data.name Either "simul" or "rhc"
+#' @param data.name Either "simul", "rhc", or "gbsg"
 #' @param t.vec A vector of times for which to compute the bounds of the survival function
 #' @param a If a=1, computes the bounds for the survival function among the treated and, if a=0, among the control
 #' @param gamma Sensitivity parameter/Confounding strength
@@ -15,7 +15,9 @@
 #' @export
 #'
 #' @examples
-survLeeMc <- function(data.list, data.name="simul", t.vec=seq(from=0.1, to=9, length.out=10), a=1, gamma=1, nb.folds=5, RMST=FALSE) {
+survLeeMc <- function(data.list, data.name="simul",
+                      t.vec=seq(from=0.1, to=9, length.out=10), a=1,
+                      gamma=1, nb.folds=5, RMST=FALSE) {
   
   # Number of Monte-Carlo samples
   n.mc <- length(data.list)
@@ -33,10 +35,11 @@ survLeeMc <- function(data.list, data.name="simul", t.vec=seq(from=0.1, to=9, le
     # Retrieve dataset i
     simul.data.list <- data.list[[i]]
     p.X <- ncol(simul.data.list$X)
+    n <- length(simul.data.list$A)
     
     if (data.name == "simul") {
       Delta <- 1 * (simul.data.list$T01 <= simul.data.list$C)
-    } else if (data.name == "rhc") {
+    } else if (data.name %in% c("rhc", "gbsg")) {
       Delta <- simul.data.list$Delta
     }
     
@@ -56,13 +59,22 @@ survLeeMc <- function(data.list, data.name="simul", t.vec=seq(from=0.1, to=9, le
       sim.data.df$A <- 1 - sim.data.df$A
     }
     
+    if (nb.folds > 1) {
+      # Index for each fold
+      folds.ind <- split(sample(1:n, replace=FALSE),
+                         cut(x=1:n, breaks=nb.folds, labels=FALSE))
+    } else {
+      folds.ind <- NULL
+    }
+    
     tk.unique.a.delta <- unique(sim.data.df$T.obs[sim.data.df$A == 1 & sim.data.df$Delta == 1])
     
     
     ###################################
     ### Propensity score estimation ###
     ###################################
-    e.predict <- propScore(sim.data.df=sim.data.df, p.X=p.X, nb.folds=nb.folds)
+    e.predict <- propScore(sim.data.df=sim.data.df, p.X=p.X,
+                           nb.folds=nb.folds, folds.ind=folds.ind)
     weights <- (1 - e.predict) / e.predict
     
     # Weights for A=a
@@ -282,15 +294,19 @@ objectiveFun <- function(init, time, tk.unique.a.delta, sim.data.df,
 #'
 #' @param version Experiment number
 #' @param data.version Simulated data version number
-#' @param data.name Either "simul" or "rhc"
+#' @param data.name Either "simul", "rhc", or "gbsg"
 #' @param gamma The sensitivity parameter/confounding strength
 #' @param nb.folds Number of folds for cross-fitting
 #' @param RMST Boolean. If TRUE, bounds for the RMST are computed. Else, bounds for the survival function are computed.
+#' @param bootstrap Boolean. If TRUE, the bounds are computed for different bootstrap samples and confidence intervals are returned.
+#' @param B Number of bootstrap samples
+#' @param alpha Significance level of the confidence intervals
 #'
 #' @return
 #' @export
 leeMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
-                     nb.folds=5, RMST=FALSE) {
+                     nb.folds=5, RMST=FALSE, bootstrap=FALSE, B=100,
+                     alpha=0.05) {
   
   if (data.name == "simul") {
     
@@ -298,27 +314,42 @@ leeMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
     file.name <- paste0("./data/simul/data_list_v", data.version, ".rds")
     data.list <- readRDS(file.name)
     
-    t.vec <- seq(from=0.1, to=9, length.out=10)
+    tk.unique <- seq(from=0.1, to=9, length.out=10)
 
   } else if (data.name == "rhc") {
     
     file.name <- paste0("./data/RHC/preprocessed_data.rds")
     data.list <- readRDS(file.name)
     
-    t.vec <- seq(from=min(data.list[[1]]$T.obs), to=50, length.out=5)
-    t.vec <- sort(c(t.vec, 30))  # Add 30 days
+    tk.unique <- seq(from=min(data.list[[1]]$T.obs), to=50, length.out=5)
+    tk.unique <- sort(c(tk.unique, 30))  # Add 30 days
+    
+    if (bootstrap) {
+      data.list <- bootstrapFun(data.list=data.list, B=B)
+    }
+    
+  } else if (data.name == "gbsg") {
+    
+    file.name <- paste0("./data/GBSG/preprocessed_data.rds")
+    data.list <- readRDS(file.name)
+    
+    tk.unique <- seq(from=min(data.list[[1]]$T.obs), to=1826.25, length.out=5)
+
+    if (bootstrap) {
+      data.list <- bootstrapFun(data.list=data.list, B=B)
+    }
     
   }
   
   start.time <- Sys.time()
   
   treated.bounds.lee.list <- survLeeMc(data.list=data.list, data.name=data.name,
-                                       t.vec=t.vec,
+                                       t.vec=tk.unique,
                                        a=1, gamma=gamma, nb.folds=nb.folds,
                                        RMST=RMST)
   
   control.bounds.lee.list <- survLeeMc(data.list=data.list, data.name=data.name,
-                                       t.vec=t.vec,
+                                       t.vec=tk.unique,
                                        a=0, gamma=gamma, nb.folds=nb.folds,
                                        RMST=RMST)
   
@@ -328,26 +359,42 @@ leeMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
   exec.time.list <- list(start=start.time, end=end.time, elapsed=elapsed)
   
   if (RMST) {
-    saveRDS(exec.time.list, file=paste0("results/", data.name, "_lee_rmst_tot_exec_time_v", version, ".rds"))
-    saveRDS(control.bounds.lee.list$exec.times.list, file=paste0("results/", data.name, "_lee_rmst_control_exec_time_mc_v", version, ".rds"))
-    saveRDS(treated.bounds.lee.list$exec.times.list, file=paste0("results/", data.name, "_lee_rmst_treated_exec_time_mc_v", version, ".rds"))
+    measure <- "rmst"
   } else {
-    saveRDS(exec.time.list, file=paste0("results/", data.name, "_lee_surv_tot_exec_time_v", version, ".rds"))
-    saveRDS(control.bounds.lee.list$exec.times.list, file=paste0("results/", data.name, "_lee_surv_control_exec_time_mc_v", version, ".rds"))
-    saveRDS(treated.bounds.lee.list$exec.times.list, file=paste0("results/", data.name, "_lee_surv_treated_exec_time_mc_v", version, ".rds"))
+    measure <- "surv"
   }
+  
+  saveRDS(exec.time.list, file=paste0("results/", data.name, "_lee_", measure, "_tot_exec_time_v", version, ".rds"))
+  saveRDS(control.bounds.lee.list$exec.times.list, file=paste0("results/", data.name, "_lee_", measure, "_control_exec_time_mc_v", version, ".rds"))
+  saveRDS(treated.bounds.lee.list$exec.times.list, file=paste0("results/", data.name, "_lee_", measure, "_treated_exec_time_mc_v", version, ".rds"))
   
   # Transform list into dataframe
   treated.bounds.lee <- do.call(rbind.data.frame, treated.bounds.lee.list$bounds.list)
   control.bounds.lee <- do.call(rbind.data.frame, control.bounds.lee.list$bounds.list)
   
   # Save results
-  if (RMST) {
-    saveRDS(treated.bounds.lee, file=paste0("results/", data.name, "_lee_bounds_rmst_mc_treated_v", version, ".rds"))
-    saveRDS(control.bounds.lee, file=paste0("results/", data.name, "_lee_bounds_rmst_mc_control_v", version, ".rds"))
-  } else {
-    saveRDS(treated.bounds.lee, file=paste0("results/", data.name, "_lee_bounds_surv_mc_treated_v", version, ".rds"))
-    saveRDS(control.bounds.lee, file=paste0("results/", data.name, "_lee_bounds_surv_mc_control_v", version, ".rds"))
+  saveRDS(treated.bounds.lee, file=paste0("results/", data.name, "_lee_bounds_", measure, "_mc_treated_v", version, ".rds"))
+  saveRDS(control.bounds.lee, file=paste0("results/", data.name, "_lee_bounds_", measure, "_mc_control_v", version, ".rds"))
+  
+  # For confidence intervals
+  col.names <- c("ub", "lb", "time")
+  
+  treated.bounds.ci <- foreach(k=1:length(tk.unique)+1) %dopar% {
+    apply(X=treated.bounds.lee[treated.bounds.lee$time == c(0, tk.unique)[k],
+                               col.names],
+          MARGIN=2,
+          FUN=quantile,
+          probs=c(alpha/2, 1-alpha/2))
   }
   
+  control.bounds.ci <- foreach(k=1:length(tk.unique)+1) %dopar% {
+    apply(X=control.bounds.lee[control.bounds.lee$time == c(0, tk.unique)[k],
+                               col.names],
+          MARGIN=2,
+          FUN=quantile,
+          probs=c(alpha/2, 1-alpha/2))
+  }
+  
+  saveRDS(treated.bounds.ci, file=paste0("results/", data.name, "_lee_bounds_ci_", measure, "_mc_treated_v", version, ".rds"))
+  saveRDS(control.bounds.ci, file=paste0("results/", data.name, "_lee_bounds_ci_", measure, "_mc_control_v", version, ".rds"))
 }

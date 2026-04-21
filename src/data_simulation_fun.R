@@ -19,6 +19,8 @@ logistic <- function(x) {
 #' @param U Matrix of unobserved confounders
 #' @param a Treatment allocation (either 1 for treated, or 0 for control)
 #' @param n Sample size
+#' @param p.X Dimension of X
+#' @param p.U Dimension of U
 #'
 #' @return A vector of size n
 #' 
@@ -43,6 +45,39 @@ T.fun <- function(X, U, a, n, p.X, p.U) {
 }
 
 
+#' Function to generate C0 and C1
+#'
+#' @param X Matrix of observed confounders
+#' @param U Matrix of unobserved confounders
+#' @param a Treatment allocation (either 1 for treated, or 0 for control)
+#' @param n Sample size
+#' @param p.X Dimension of X
+#' @param p.U Dimension of U
+#' @param shape Shape parameter of a Weibull distribution
+#'
+#' @return A vector of size n
+#' 
+#' @keywords internal
+C.fun <- function(X, U, a, n, p.X, p.U, shape) {
+  
+  Unif.a <- runif(n=n, min=0, max=1)
+  beta.X <- runif(n=p.X, min=2, max=2.5)
+  # Remove the effect of U
+  beta.U <- rep(0, p.U)
+  
+  ind.nb <- 1
+  fact <- 10
+  fact.exp <- 0.95
+  const <- 20  # Increase this value to increase the average treatment effect
+  lamb <- fact.exp / fact**shape
+  scale <- lamb * exp(log(const) * a + beta.X %*% X[ind.nb, ] + beta.U %*% U[ind.nb, ])
+  
+  T.distrib.fun <- function(x) {return(exp(-lamb * x**shape * exp(log(const) * a + beta.X %*% t(X) + beta.U %*% t(U))))}
+  T.gen <- fact * (- log(Unif.a) / (fact.exp * exp(log(const) * a + beta.X %*% t(X) + beta.U %*% t(U))))**(1/shape)
+  return(list(C.gen=T.gen, C.distrib.fun=T.distrib.fun))
+}
+
+
 #' Function to generate the simulated data
 #'
 #' @param p.X Dimension of X
@@ -54,6 +89,7 @@ T.fun <- function(X, U, a, n, p.X, p.U) {
 #' @param gamma.data True confounding strength
 #' @param sigma.G Standard deviation of the Gaussian distribution G in the definition of U|X=x
 #' @param shape Shape/scale parameter for the Weibull distribution of C
+#' @param inform.cens Whether informative censoring should be used or not
 #' @param verbose A boolean indicating whether to print Pearson correlations or not
 #'
 #' @return A list containing the generated data.
@@ -67,6 +103,7 @@ genData <- function(p.X=5, p.U=3, n=2000, alpha=0.2,
                     gamma.data=5,
                     sigma.G=1,
                     shape=0.354,
+                    inform.cens=FALSE,
                     verbose=FALSE) {
   
   if (p.X < 1) {
@@ -110,7 +147,13 @@ genData <- function(p.X=5, p.U=3, n=2000, alpha=0.2,
   T01 <- ifelse(A == 1, T1, T0)
   
   # Generate C (independent censoring, can be changed for conditional independent censoring)
-  C <- rweibull(n=n, shape=shape, scale=10)
+  if (inform.cens) {
+    C1 <- C.fun(X=X, U=U, a=1, n=n, p.X=p.X, p.U=p.U, shape=shape)$C.gen
+    C0 <- C.fun(X=X, U=U, a=0, n=n, p.X=p.X, p.U=p.U, shape=shape)$C.gen
+    C <- ifelse(A == 1, C1, C0)
+  } else {
+    C <- rweibull(n=n, shape=shape, scale=10)
+  }
   
   T.obs <- pmin(T01, C)
   

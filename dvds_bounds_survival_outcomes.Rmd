@@ -34,10 +34,18 @@ RMST
 
 ![Sensitivity analysis for the difference in RMST](./figures/simul_diff_rmst_plot_lee_dvds_estim_I_and_II_v2_v2.pdf)
 
+Fast RMST
+
+![Sensitivity analysis for fast RMST among the treated](./figures/simul_fast_rmst_plot_treated_lee_dvds_estim_I_and_II_v2_v18.pdf)
+
+![Sensitivity analysis for fast RMST among the control](./figures/simul_fast_rmst_plot_control_lee_dvds_estim_I_and_II_v2_v18.pdf)
+
+![Sensitivity analysis for fast difference in RMST](./figures/simul_diff_fast_rmst_plot_lee_dvds_estim_I_and_II_v2_v18.pdf)
+
 
 ### Real data
 
-Difference of survival functions
+Difference of survival functions on the RHC dataset
 
 ![Sensitivity analysis for the difference of survival functions with Gamma=1.15](./figures/rhc_diff_surv_plot_lee_dvds_estim_I_and_II_v3_v3.pdf)
 
@@ -46,7 +54,7 @@ Difference of survival functions
 ![Sensitivity analysis for the difference of survival functions with Gamma=1.5](./figures/rhc_diff_surv_plot_lee_dvds_estim_I_and_II_v5_v5.pdf)
 
 
-Difference in RMST
+Difference in RMST on the RHC dataset
 
 ![Sensitivity analysis for the difference in RMST with Gamma=1.15](./figures/rhc_diff_rmst_plot_lee_dvds_estim_I_and_II_v6_v6.pdf)
 
@@ -55,3 +63,26 @@ Difference in RMST
 ![Sensitivity analysis for the difference in RMST with Gamma=1.5](./figures/rhc_diff_rmst_plot_lee_dvds_estim_I_and_II_v8_v8.pdf)
 
 
+Difference of survival functions on the GBCSG dataset
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.08](./figures/gbsg_diff_surv_plot_lee_dvds_estim_I_and_II_v17_v17.pdf)
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.15](./figures/gbsg_diff_surv_plot_lee_dvds_estim_I_and_II_v9_v9.pdf)
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.2](./figures/gbsg_diff_surv_plot_lee_dvds_estim_I_and_II_v10_v10.pdf)
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.5](./figures/gbsg_diff_surv_plot_lee_dvds_estim_I_and_II_v11_v11.pdf)
+
+
+Confidence interval for the difference of survival functions on the GBCSG dataset
+
+![Sensitivity analysis (confidence intervals) for the difference of survival functions with Gamma=1.08](./figures/gbsg_diff_surv_plot_ci_lee_dvds_estim_I_and_II_v16_v16.pdf)
+
+
+Difference in RMST on the GBCSG dataset
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.15](./figures/gbsg_diff_rmst_plot_lee_dvds_estim_I_and_II_v12_v12.pdf)
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.2](./figures/gbsg_diff_rmst_plot_lee_dvds_estim_I_and_II_v13_v13.pdf)
+
+![Sensitivity analysis for the difference of survival functions with Gamma=1.5](./figures/gbsg_diff_rmst_plot_lee_dvds_estim_I_and_II_v14_v14.pdf)

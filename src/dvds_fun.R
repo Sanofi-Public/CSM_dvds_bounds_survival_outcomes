@@ -13,6 +13,9 @@
 #' @param num.trees Number of trees for random forests
 #' @param cq.method Method to compute the conditional quantiles. Default is "fn".
 #' @param RMST If TRUE, computes the bounds for the RMST, else, computes the bounds for the survival functions
+#' @param fast.RMST If TRUE, computes the fast version of the RMST (no rectangle integration)
+#' @param alpha Significance level of the confidence intervals
+#' @param cq.type Type of conditional quantiles. Either "linear" or "rf" (random forest)
 #'
 #' @return A list of the bounds for each Monte-Carlo sample at each time point in tk.unique
 #' @export
@@ -21,9 +24,8 @@
 survDvdsMc <- function(data.list, data.name="simul",
                        tk.unique=seq(from=0.1, to=9, length.out=10),
                        a=1, gamma=1, nb.folds=5, use.U=FALSE, num.trees=500,
-                       cq.method="fn", RMST=FALSE) {
-  
-  require(foreach)
+                       cq.type=c("linear", "rf"), cq.method="fn",
+                       RMST=FALSE, fast.RMST=FALSE, alpha=0.05) {
   
   # Number of Monte-Carlo samples
   n.mc <- length(data.list)
@@ -43,7 +45,7 @@ survDvdsMc <- function(data.list, data.name="simul",
     
     if (data.name == "simul") {
       Delta <- 1 * (simul.data.list$T01 <= simul.data.list$C)
-    } else if (data.name == "rhc") {
+    } else if (data.name %in% c("rhc", "gbsg")) {
       Delta <- simul.data.list$Delta
     }
     
@@ -58,29 +60,50 @@ survDvdsMc <- function(data.list, data.name="simul",
     sim.data.df[sim.data.df$T.obs > q.adm.cens, "T.obs"] <- q.adm.cens
     sim.data.df[sim.data.df$T.obs > q.adm.cens, "Delta"] <- 0
     
-    
-    #####################################
-    ### Censoring function estimation ###
-    #####################################
-    
     if (a == 0) {
       # Invert treated and control group
       sim.data.df$A <- 1 - sim.data.df$A
     }
     
-    # # Estimation via a Cox model for A=1 (treated)
-    G.predict1 <- censoringFun(sim.data.df=sim.data.df, p.X=p.X, p.U=p.U,
-                               nb.folds=nb.folds, use.U=use.U, t.predict=NULL)
+    if (nb.folds > 1) {
+      # Index for each fold
+      folds.ind <- split(sample(1:n, replace=FALSE),
+                         cut(x=1:n, breaks=nb.folds, labels=FALSE))
+    } else {
+      folds.ind <- NULL
+    }
     
-    if (RMST) {
+    
+    #####################################
+    ### Censoring function estimation ###
+    #####################################
+    
+    if (!fast.RMST) {
+      # Estimation via a Cox model for A=1 (treated)
+      G.predict1 <- censoringFun(sim.data.df=sim.data.df, p.X=p.X, p.U=p.U,
+                                 nb.folds=nb.folds, folds.ind=folds.ind,
+                                 use.U=use.U, t.predict=NULL)
+    }
+    
+    if (RMST && !fast.RMST) {
       unique.T.obs <- unique(sim.data.df$T.obs)
       unique.T.obs.inf.max.tk <- unique.T.obs[unique.T.obs <= max(tk.unique)]
+      
       G.predict2 <- censoringFun(sim.data.df=sim.data.df, p.X=p.X, p.U=p.U,
-                                 nb.folds=nb.folds, use.U=use.U,
+                                 nb.folds=nb.folds, folds.ind=folds.ind,
+                                 use.U=use.U,
                                  t.predict=unique.T.obs.inf.max.tk)
+    } else if (RMST && fast.RMST) {
+      
+      G.predict2 <- censoringFun(sim.data.df=sim.data.df, p.X=p.X, p.U=p.U,
+                                 nb.folds=nb.folds, folds.ind=folds.ind,
+                                 use.U=use.U,
+                                 t.predict=tk.unique, fast.RMST=TRUE)
+      
     } else {
       G.predict2 <- censoringFun(sim.data.df=sim.data.df, p.X=p.X, p.U=p.U,
-                                 nb.folds=nb.folds, use.U=use.U,
+                                 nb.folds=nb.folds, folds.ind=folds.ind,
+                                 use.U=use.U,
                                  t.predict=tk.unique)
     }
 
@@ -89,10 +112,11 @@ survDvdsMc <- function(data.list, data.name="simul",
     ### Propensity score estimation ###
     ###################################
     
-    e.predict <- propScore(sim.data.df=sim.data.df, p.X=p.X, nb.folds=nb.folds)
+    e.predict <- propScore(sim.data.df=sim.data.df, p.X=p.X, nb.folds=nb.folds,
+                           folds.ind=folds.ind)
     weights <- (1 - e.predict) / e.predict
     
-    if (RMST) {
+    if (RMST && !fast.RMST) {
       
       bounds.df <- data.frame(ub1=rep(NA, tk.unique.length),
                               lb1=rep(NA, tk.unique.length),
@@ -121,7 +145,8 @@ survDvdsMc <- function(data.list, data.name="simul",
                                       G.predict1=G.predict1,
                                       G.predict2=G.predict2,
                                       weights=weights, num.trees=num.trees,
-                                      nb.folds=nb.folds, cq.method=cq.method)
+                                      nb.folds=nb.folds, folds.ind=folds.ind,
+                                      cq.method=cq.method, cq.type=cq.type)
           
           # Add bounds for time 0 (the probability is 1)
           bounds.rect.df <- rbind(c(1, 1, 1, 1, 1, 1, 0), bounds.rect.df)
@@ -152,13 +177,28 @@ survDvdsMc <- function(data.list, data.name="simul",
       
       bounds.list[[j]] <- rbind(c(0, 0, 0, 0, 0, 0, 0), bounds.df)
       
+    } else if (RMST && fast.RMST) {
+      
+      bounds.df <- fastRmstBoundsFun(sim.data.df=sim.data.df, n=n,
+                                     p.X=p.X, tk.unique=tk.unique,
+                                     gamma=gamma,
+                                     G.predict2=G.predict2,
+                                     weights=weights, num.trees=num.trees,
+                                     nb.folds=nb.folds, folds.ind=folds.ind,
+                                     cq.method=cq.method, cq.type=cq.type)
+      
+      bounds.list[[j]] <- rbind(c(0, 0, 0, 0, 0, 0, 0), bounds.df)
+      
     } else {
       
-      bounds.df <- boundsFun(sim.data.df=sim.data.df, n=n, p.X=p.X, tk.unique=tk.unique,
+      bounds.df <- boundsFun(sim.data.df=sim.data.df, n=n,
+                             p.X=p.X, tk.unique=tk.unique,
                              gamma=gamma,
-                             G.predict1=G.predict1, G.predict2=G.predict2,
+                             G.predict1=G.predict1,
+                             G.predict2=G.predict2,
                              weights=weights, num.trees=num.trees,
-                             nb.folds=nb.folds, cq.method=cq.method)
+                             nb.folds=nb.folds, folds.ind=folds.ind,
+                             cq.method=cq.method, cq.type=cq.type)
       
       bounds.list[[j]] <- rbind(c(1, 1, 1, 1, 1, 1, 0), bounds.df)
     }
@@ -180,15 +220,19 @@ survDvdsMc <- function(data.list, data.name="simul",
 #' @param num.trees Number of trees for random forests
 #' @param tk.unique.vec Vector of unique times for which to compute the intervals
 #' @param nb.folds Number of folds for cross-fitting
+#' @param folds.ind Folds indices for K-fold cross-fitting
 #' @param cq.method Method to compute the conditional quantiles
+#' @param cq.type Type of conditional quantiles. Either "linear" or "rf" (random forest)
 #'
 #' @return A dataframe with the bounds
 #' @keywords internal
 boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
-                      G.predict2, weights, num.trees, nb.folds, cq.method) {
+                      G.predict2, weights, num.trees, nb.folds, folds.ind,
+                      cq.method, cq.type) {
   
   tk.unique.vec.length <- length(tk.unique.vec)
   tau <- gamma / (1 + gamma)
+  n <- length(sim.data.df$T.obs)
   
   # For the progress bar
   pb <- txtProgressBar(max=tk.unique.vec.length, style=3)
@@ -202,10 +246,12 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
   }
   opts <- list(progress=progress)
   
+  export.vec <- c("condQuantile", "outcomeRegression")
+  
   bounds.df <- foreach(k=1:tk.unique.vec.length,
                        .combine="rbind",
                        .options.snow=opts,
-                       .export=c("outcomeRegression", "condQuantile", "quantileRegression", "randomForestFun")) %dopar% {
+                       .export=export.vec) %dopar% {
                          
                          indic.tk <- sim.data.df$T.obs > tk.unique.vec[k]
                          # Equivalent of Y for estimator 1
@@ -219,17 +265,32 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
                          
                          Q.predict1 <- condQuantile(sim.data.df=sim.data.df, p.X=p.X,
                                                     Q.formula=Q.formula1, tau=tau,
-                                                    nb.folds=nb.folds, method=cq.method)
+                                                    nb.folds=nb.folds,
+                                                    folds.ind=folds.ind,
+                                                    method=cq.method,
+                                                    cq.type=cq.type)
                          
                          Q.predict2 <- condQuantile(sim.data.df=sim.data.df, p.X=p.X,
                                                     Q.formula=Q.formula2, tau=tau,
-                                                    nb.folds=nb.folds, method=cq.method)
+                                                    nb.folds=nb.folds,
+                                                    folds.ind=folds.ind,
+                                                    method=cq.method,
+                                                    cq.type=cq.type)
                          
                          # To avoid dimension error when Gamma=1
                          if (gamma == 1) {
                            
-                           Q.lb1 <- Q.ub1 <- Q.predict1
-                           Q.lb2 <- Q.ub2 <- Q.predict2
+                           if (cq.type == "linear") {
+                             
+                             Q.lb1 <- Q.ub1 <- Q.predict1
+                             Q.lb2 <- Q.ub2 <- Q.predict2
+                             
+                           } else if (cq.type == "rf") {
+                             
+                             Q.lb1 <- Q.ub1 <- Q.predict1[, 1]
+                             Q.lb2 <- Q.ub2 <- Q.predict2[, 2]
+                             
+                           }
                            
                          } else {
                            
@@ -248,6 +309,7 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
                          rho.lb1 <- outcomeRegression(sim.data.df=sim.data.df,
                                                       rho.formula=rho.lb.formula1,
                                                       nb.folds=nb.folds,
+                                                      folds.ind=folds.ind,
                                                       num.trees=num.trees)
                          
                          sim.data.df$Y.rho.ub1 <- sim.data.df$Y.est1 / gamma + (1 - 1 / gamma) * (Q.ub1 + pmax(rep(0, n), sim.data.df$Y.est1 - Q.ub1) / (1 - tau))
@@ -256,6 +318,7 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
                          rho.ub1 <- outcomeRegression(sim.data.df=sim.data.df,
                                                       rho.formula=rho.ub.formula1,
                                                       nb.folds=nb.folds,
+                                                      folds.ind=folds.ind,
                                                       num.trees=num.trees)
                          
                          # Estimator II
@@ -265,6 +328,7 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
                          rho.lb2 <- outcomeRegression(sim.data.df=sim.data.df,
                                                       rho.formula=rho.lb.formula2,
                                                       nb.folds=nb.folds,
+                                                      folds.ind=folds.ind,
                                                       num.trees=num.trees)
                          
                          sim.data.df$Y.rho.ub2 <- sim.data.df$Y.est2 / gamma + (1 - 1 / gamma) * (Q.ub2 + pmax(rep(0, n), sim.data.df$Y.est2 - Q.ub2) / (1 - tau))
@@ -273,11 +337,14 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
                          rho.ub2 <- outcomeRegression(sim.data.df=sim.data.df,
                                                       rho.formula=rho.ub.formula2,
                                                       nb.folds=nb.folds,
+                                                      folds.ind=folds.ind,
                                                       num.trees=num.trees)
                          
                          # Estimator I (invert lb and ub because of the "-" sign)
-                         ub1 <- 1 - mean(sim.data.df$A * sim.data.df$Y.est1 + (1-sim.data.df$A) * rho.lb1 + sim.data.df$A * weights * (Q.lb1 + gamma**(- sign(sim.data.df$Y.est1 - Q.lb1)) * (sim.data.df$Y.est1 - Q.lb1) - rho.lb1))
-                         lb1 <- 1 - mean(sim.data.df$A * sim.data.df$Y.est1 + (1-sim.data.df$A) * rho.ub1 + sim.data.df$A * weights * (Q.ub1 + gamma**(sign(sim.data.df$Y.est1 - Q.ub1)) * (sim.data.df$Y.est1 - Q.ub1) - rho.ub1))
+                         phi.ub1 <- sim.data.df$A * sim.data.df$Y.est1 + (1-sim.data.df$A) * rho.lb1 + sim.data.df$A * weights * (Q.lb1 + gamma**(- sign(sim.data.df$Y.est1 - Q.lb1)) * (sim.data.df$Y.est1 - Q.lb1) - rho.lb1)
+                         phi.lb1 <- sim.data.df$A * sim.data.df$Y.est1 + (1-sim.data.df$A) * rho.ub1 + sim.data.df$A * weights * (Q.ub1 + gamma**(sign(sim.data.df$Y.est1 - Q.ub1)) * (sim.data.df$Y.est1 - Q.ub1) - rho.ub1)
+                         ub1 <- 1 - mean(phi.ub1)
+                         lb1 <- 1 - mean(phi.lb1)
                          
                          # Compute estimator I under ignorability
                          # Compute the modified outcome regression
@@ -286,6 +353,7 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
                          rho1 <- outcomeRegression(sim.data.df=sim.data.df,
                                                    rho.formula=rho.formula1,
                                                    nb.folds=nb.folds,
+                                                   folds.ind=folds.ind,
                                                    num.trees=num.trees)
                          
                          ign.vec1 <- 1 - mean(sim.data.df$A * sim.data.df$Y.est1 + (1-sim.data.df$A) * rho1 + sim.data.df$A * weights * (sim.data.df$Y.est1 - rho1))
@@ -302,6 +370,7 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
                          rho2 <- outcomeRegression(sim.data.df=sim.data.df,
                                                    rho.formula=rho.formula2,
                                                    nb.folds=nb.folds,
+                                                   folds.ind=folds.ind,
                                                    num.trees=num.trees)
                          
                          ign.vec2 <- mean(sim.data.df$A * sim.data.df$Y.est2 + (1-sim.data.df$A) * rho2 + sim.data.df$A * weights * (sim.data.df$Y.est2 - rho2))
@@ -317,20 +386,151 @@ boundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma, G.predict1,
 }
 
 
+#' Function that computes the "fast RMST" DVDS bounds
+#'
+#' @param sim.data.df A data.frame object containing the data
+#' @param n The sample size
+#' @param p.X The dimension of X
+#' @param gamma The sensitivity parameter
+#' @param G.predict2 Censoring function predictions for Estimator II
+#' @param weights Weights involving the propensity score in our bounds
+#' @param num.trees Number of trees for random forests
+#' @param tk.unique.vec Vector of unique times for which to compute the intervals
+#' @param nb.folds Number of folds for cross-fitting
+#' @param folds.ind Folds indices for K-fold cross-fitting
+#' @param cq.method Method to compute the conditional quantiles
+#' @param cq.type Type of conditional quantiles. Either "linear" or "rf" (random forest)
+#'
+#' @return A dataframe with the bounds
+#' @keywords internal
+fastRmstBoundsFun <- function(sim.data.df, n, p.X, tk.unique.vec, gamma,
+                              G.predict2, weights, num.trees,
+                              nb.folds, folds.ind,
+                              cq.method, cq.type) {
+  
+  tk.unique.vec.length <- length(tk.unique.vec)
+  tau <- gamma / (1 + gamma)
+  
+  # For the progress bar
+  pb <- txtProgressBar(max=tk.unique.vec.length, style=3)
+  progress <- function(N) {
+    if (N != tk.unique.vec.length) {
+      setTxtProgressBar(pb, N)
+    } else {
+      setTxtProgressBar(pb, N)
+      close(pb)
+    }
+  }
+  opts <- list(progress=progress)
+  
+  export.vec <- c("condQuantile", "outcomeRegression")
+  
+  bounds.df <- foreach(k=1:tk.unique.vec.length,
+                       .combine="rbind",
+                       .options.snow=opts,
+                       .export=export.vec) %dopar% {
+                         
+                         # Equivalent of Y for estimator 2
+                         indic.tk <- pmax(sim.data.df$Delta, 1 * (sim.data.df$T.obs >= tk.unique.vec[k]))
+                         sim.data.df$Y.est2 <- indic.tk * pmin(sim.data.df$T.obs, tk.unique.vec[k]) / G.predict2[k, ]
+                         
+                         X.formula <- paste("X", 1:p.X, sep=".", collapse=" + ")
+                         Q.formula2 <- paste("Y.est2 ~", X.formula, "+ A")
+                         
+                         Q.predict2 <- condQuantile(sim.data.df=sim.data.df, p.X=p.X,
+                                                    Q.formula=Q.formula2, tau=tau,
+                                                    nb.folds=nb.folds,
+                                                    folds.ind=folds.ind,
+                                                    method=cq.method,
+                                                    cq.type=cq.type)
+                         
+                         # To avoid dimension error when Gamma=1
+                         if (gamma == 1) {
+                           
+                           if (cq.type == "linear") {
+                             
+                             Q.lb2 <- Q.ub2 <- Q.predict2
+                             
+                           } else if (cq.type == "rf") {
+                             
+                             Q.lb2 <- Q.ub2 <- Q.predict2[, 1]
+                             
+                           }
+
+                         } else {
+                           
+                           Q.lb2 <- Q.predict2[, 1]
+                           Q.ub2 <- Q.predict2[, 2]
+                           
+                         }
+                         
+                         # Estimator II
+                         sim.data.df$Y.rho.lb2 <- sim.data.df$Y.est2 / gamma + (1 - 1 / gamma) * (Q.lb2 + pmin(rep(0, n), sim.data.df$Y.est2 - Q.lb2) / (1 - tau))
+                         rho.lb.formula2 <- as.formula(paste("Y.rho.lb2 ~", paste("X", 1:p.X, sep=".", collapse=" + "), "+ A"))
+                         
+                         rho.lb2 <- outcomeRegression(sim.data.df=sim.data.df,
+                                                      rho.formula=rho.lb.formula2,
+                                                      nb.folds=nb.folds,
+                                                      folds.ind=folds.ind,
+                                                      num.trees=num.trees)
+                         
+                         sim.data.df$Y.rho.ub2 <- sim.data.df$Y.est2 / gamma + (1 - 1 / gamma) * (Q.ub2 + pmax(rep(0, n), sim.data.df$Y.est2 - Q.ub2) / (1 - tau))
+                         rho.ub.formula2 <- as.formula(paste("Y.rho.ub2 ~", paste("X", 1:p.X, sep=".", collapse=" + "), "+ A"))
+                         
+                         rho.ub2 <- outcomeRegression(sim.data.df=sim.data.df,
+                                                      rho.formula=rho.ub.formula2,
+                                                      nb.folds=nb.folds,
+                                                      folds.ind=folds.ind,
+                                                      num.trees=num.trees)
+                         
+                         # Estimator II
+                         ub2 <- mean(sim.data.df$A * sim.data.df$Y.est2 + (1-sim.data.df$A) * rho.ub2 + sim.data.df$A * weights * (Q.ub2 + gamma**(sign(sim.data.df$Y.est2 - Q.ub2)) * (sim.data.df$Y.est2 - Q.ub2) - rho.ub2)) 
+                         lb2 <- mean(sim.data.df$A * sim.data.df$Y.est2 + (1-sim.data.df$A) * rho.lb2 + sim.data.df$A * weights * (Q.lb2 + gamma**(- sign(sim.data.df$Y.est2 - Q.lb2)) * (sim.data.df$Y.est2 - Q.lb2) - rho.lb2))
+                         
+                         # Compute estimator II under ignorability
+                         # Compute the modified outcome regression
+                         rho.formula2 <- as.formula(paste("Y.est2 ~", paste("X", 1:p.X, sep=".", collapse=" + "), "+ A"))
+                         
+                         rho2 <- outcomeRegression(sim.data.df=sim.data.df,
+                                                   rho.formula=rho.formula2,
+                                                   nb.folds=nb.folds,
+                                                   folds.ind=folds.ind,
+                                                   num.trees=num.trees)
+                         
+                         ign.vec2 <- mean(sim.data.df$A * sim.data.df$Y.est2 + (1-sim.data.df$A) * rho2 + sim.data.df$A * weights * (sim.data.df$Y.est2 - rho2))
+
+                         bounds.df <- data.frame(ub1=ub2, lb1=lb2, ign.vec1=ign.vec2,
+                                                 ub2=ub2, lb2=lb2, ign.vec2=ign.vec2,
+                                                 time=tk.unique.vec[k])
+                         
+                         return(bounds.df)
+                       }
+  
+  return(bounds.df)
+}
+
+
 #' Function to launch the experiment with the DVDS bounds
 #'
 #' @param version Experiment number
 #' @param data.version Simulated data version number
-#' @param data.name Either "simul" or "rhc"
+#' @param data.name Either "simul", "rhc", or "gbsg"
 #' @param gamma The sensitivity parameter/confounding strength
 #' @param nb.folds Number of folds for cross-fitting
 #' @param num.trees Number of trees in the random forest
 #' @param RMST Boolean. If TRUE, bounds for the RMST are computed. Else, bounds for the survival function are computed.
+#' @param fast.RMST If TRUE, computes the fast version of the RMST (no rectangle integration)
+#' @param cq.type Type of conditional quantiles. Either "linear" or "rf" (random forest)
+#' @param bootstrap Boolean. If TRUE, the bounds are computed for different bootstrap samples and confidence intervals are returned.
+#' @param B Number of bootstrap samples
+#' @param alpha Significance level of the confidence intervals
 #'
 #' @return
 #' @export
 dvdsMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
-                      nb.folds=5, num.trees=500, RMST=FALSE) {
+                      nb.folds=5, num.trees=500, RMST=FALSE, fast.RMST=FALSE,
+                      cq.type=c("linear", "rf"), bootstrap=FALSE, B=100,
+                      alpha=0.05) {
   
   use.U <- FALSE
   
@@ -350,6 +550,21 @@ dvdsMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
     tk.unique <- seq(from=min(data.list[[1]]$T.obs), to=50, length.out=5)
     tk.unique <- sort(c(tk.unique, 30))  # Add 30 days
     
+    if (bootstrap) {
+      data.list <- bootstrapFun(data.list=data.list, B=B)
+    }
+    
+  } else if (data.name == "gbsg") {
+    
+    file.name <- paste0("./data/GBSG/preprocessed_data.rds")
+    data.list <- readRDS(file.name)
+    
+    tk.unique <- seq(from=min(data.list[[1]]$T.obs), to=1826.25, length.out=5)
+    
+    if (bootstrap) {
+      data.list <- bootstrapFun(data.list=data.list, B=B)
+    }
+    
   }
   
   start.time <- Sys.time()
@@ -357,12 +572,14 @@ dvdsMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
   treated.bounds.list <- survDvdsMc(data.list=data.list, data.name=data.name, tk.unique=tk.unique,
                                     a=1, gamma=gamma, nb.folds=nb.folds,
                                     use.U=use.U, num.trees=num.trees,
-                                    RMST=RMST)
+                                    RMST=RMST, fast.RMST=fast.RMST,
+                                    cq.type=cq.type)
   
   control.bounds.list <- survDvdsMc(data.list=data.list, data.name=data.name, tk.unique=tk.unique,
                                     a=0, gamma=gamma, nb.folds=nb.folds,
                                     use.U=use.U, num.trees=num.trees,
-                                    RMST=RMST)
+                                    RMST=RMST, fast.RMST=fast.RMST,
+                                    cq.type=cq.type)
   
   end.time <- Sys.time()
   elapsed <- end.time - start.time
@@ -373,8 +590,10 @@ dvdsMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
   treated.bounds <- do.call(rbind.data.frame, treated.bounds.list)
   control.bounds <- do.call(rbind.data.frame, control.bounds.list)
   
-  if (RMST) {
+  if (RMST && !fast.RMST) {
     measure <- "rmst"
+  } else if (RMST && fast.RMST) {
+    measure <- "fast_rmst"
   } else {
     measure <- "surv"
   }
@@ -383,4 +602,25 @@ dvdsMcExp <- function(version=1, data.version=2, data.name="simul", gamma=1,
   saveRDS(control.bounds, file=paste0("results/", data.name, "_dvds_bounds_", measure, "_mc_control_v", version, ".rds"))
   saveRDS(exec.time.list, file=paste0("results/", data.name, "_dvds_", measure, "_tot_exec_time_v", version, ".rds"))
   
+  # For confidence intervals
+  col.names <- c("ub1", "lb1", "ub2", "lb2", "time")
+  
+  treated.bounds.ci <- foreach(k=1:length(tk.unique)+1) %dopar% {
+    apply(X=treated.bounds[treated.bounds$time == c(0, tk.unique)[k],
+                           col.names],
+          MARGIN=2,
+          FUN=quantile,
+          probs=c(alpha/2, 1-alpha/2))
+  }
+  
+  control.bounds.ci <- foreach(k=1:length(tk.unique)+1) %dopar% {
+    apply(X=control.bounds[control.bounds$time == c(0, tk.unique)[k],
+                           col.names],
+          MARGIN=2,
+          FUN=quantile,
+          probs=c(alpha/2, 1-alpha/2))
+  }
+  
+  saveRDS(treated.bounds.ci, file=paste0("results/", data.name, "_dvds_bounds_ci_", measure, "_mc_treated_v", version, ".rds"))
+  saveRDS(control.bounds.ci, file=paste0("results/", data.name, "_dvds_bounds_ci_", measure, "_mc_control_v", version, ".rds"))
 }

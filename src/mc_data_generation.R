@@ -2,10 +2,19 @@
 
 source("src/data_simulation_fun.R")
 
-version <- 1
+version <- 2
 
 # Number of Monte-Carlo samples
 n.mc <- 20
+
+p.X <- 2
+p.U <- 2
+n <- 1000
+
+gamma.data <- 3
+mixture.coeff <- 0.9
+shape <- 6
+inform.cens <- FALSE
 
 data.list <- list()
 
@@ -15,16 +24,9 @@ for (i in 1:n.mc) {
   ### Data generation ###
   #######################
 
-  p.X <- 2
-  p.U <- 2
-  n <- 1000
-
-  gamma.data <- 3
-  mixture.coeff <- 0.9
-  shape <- 6
-
   simul.data.list <- genData(p.X=p.X, p.U=p.U, n=n, alpha=mixture.coeff,
-                             gamma.data=gamma.data, shape=shape)
+                             gamma.data=gamma.data, shape=shape,
+                             inform.cens=inform.cens)
 
   data.list[[i]] <- simul.data.list
 

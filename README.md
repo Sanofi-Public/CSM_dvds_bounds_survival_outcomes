@@ -13,7 +13,8 @@ This repository is related to the paper *Doubly valid and doubly sharp sensitivi
 - **dvds_bounds_survival_outcomes.Rmd**: an R Markdown document to reproduce the figures and numerical results from the paper. Users need to modify **src/utils.R** before executing code from this file;
 - **src/utils.R**: functions that must be redefined by the user to get a working implementation and other useful functions;
 - **src/data_simulation_fun.R**: functions to create the simulated datasets;
-- **src/data_importation.R**: a file to preprocess the real data;
+- **src/rhc_data_importation.R**: a file to preprocess the real data on Right Heart Catheterization (RHC) (Connors et al., 1996);
+- **src/gbsg_data_importation.R**: a file to preprocess the German Breast Cancer Study Group (GBCSG) dataset (Schumacher et al., 1994);
 - **src/mc_data_generation.R**: a file to generate several Monte Carlo datasets;
 - **src/dvds_fun.R**: functions used to compute the proposed doubly valid and doubly sharp bounds;
 - **src/lee_zsb_fun.R**: functions used to compute the bounds from Lee et al. (2024);
@@ -21,6 +22,7 @@ This repository is related to the paper *Doubly valid and doubly sharp sensitivi
 - **/figures**: a folder to save the generated figures;
 - **/data/simul**: a folder that contains the simulated Monte Carlo datasets;
 - **/data/RHC**: a folder that contains the real data on Right Heart Catheterization (RHC) (Connors et al., 1996);
+- **/data/GBSG**: a folder that contains the German Breast Cancer Study Group (GBCSG) dataset (Schumacher et al., 1994);
 - **/results**: a folder that contains the results of the sensitivity analyses.
 
 *Note:* the direct optimization bounds from Lee et al. (2024) were reimplemented.
@@ -30,6 +32,8 @@ This repository is related to the paper *Doubly valid and doubly sharp sensitivi
 Connors, A. F., Speroff, T., Dawson, N. V., Thomas, C., Harrell, F. E., Wagner, D., ... & Knaus, W. A. (1996). The effectiveness of right heart catheterization in the initial care of critically III patients. Jama, 276(11), 889-897. [Link](https://doi.org/10.1001/jama.1996.03540110043030)
 
 Lee, S., Park, J. H., & Lee, W. (2024). Sensitivity analysis for unmeasured confounding in estimating the difference in restricted mean survival time. Statistical Methods in Medical Research, 33(11-12), 1979-1992. [Link](https://doi.org/10.1177/09622802241280782)
+
+Schumacher, M., Bastert, G., Bojar, H., Hübner, K., Olschewski, M., Sauerbrei, W., ... & Rauschecker, H. F. (1994). Randomized 2 x 2 trial evaluating hormonal treatment and the duration of chemotherapy in node-positive breast cancer patients. German Breast Cancer Study Group. Journal of Clinical Oncology, 12(10), 2086-2093. [Link](https://doi.org/10.1200/JCO.1994.12.10.2086)
 
 ## Requirements and Licenses
 
